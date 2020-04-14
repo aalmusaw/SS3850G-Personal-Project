@@ -1,0 +1,180 @@
+---
+title: "3850G Project"
+author: "Ali Al-Musawi"
+date: "22/03/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+In this project, we analyze the the Skin Segmentation dataset provided by UCI Machine Learning Repository. This dataset is generated from various face images of people of different age groups, ethnicities, and genders from FERET and PAL databases. In addition, many other object images were used. The features are numbers from the color space of RBG values. The output is 1 if the RBG value corresponds to a human skin, and 0 otherwise. There is a wide array of applications for predictive models based on this dataset including facial recognition softwares. A study based on this dataset was done by a group of Indian researchers published by *Samsung India Software R&D Centre*. The full study is linked at the end of the report. The study uses fuzzy decision trees for a predictive model.
+
+## Data Analysis
+Let us import the data.
+```{r echo=FALSE}
+skindata = read.table(file = "Skin_NonSkin.txt", header = F, sep = "\t")
+names(skindata) = c("B", "G", "R", "Label")
+skindata$Label[skindata$Label == 2] = 0
+skindata$Label = as.factor(skindata$Label)
+```
+We have a huge dataset with the number of observations $n = 245057$, $p = 3$ predictors, and 1 response. Ideally we would like the dataset to be *balanced*. In other words, we have close proportion of positives and negatives so that our classification task is suitable. It is necessary to know this beforehand, so if our dataset is imbalanced, then we would have to penalize misclassification of the rare class more. We will use the **Shannon Entropy** measure to gauge how balanced the dataset is. This is given by the following equation:
+$$H_s = -\sum_{i=1}^{M}p_i\log(p_i)$$
+Where, $p_i$ is the proportion of data points in class $i$ to the total number of data points, and $M$ is the total number of classes. Since $0 \le H_s \le \log(M)$, where a perfectly balanced dataset has $H_s = \log(M)$, and perfectly imbalanced dataset has $H_s = 0$, we normalize $H_s$ to define the balance of a dataset as:
+$$B_{H_s} = \frac{H_s}{\log(M)}$$
+If $B_{H_s} > 0.6$, we will conclude it is balanced.
+```{r}
+n = 245057
+M = 2
+p = c(sum(skindata$Label == 0), sum(skindata$Label == 1))
+p = p/n
+Hs = -sum(p*log(p))
+BHs = Hs/log(M)
+BHs
+```
+Since $B_{H_s} = 0.7367531 > 0.6$, our dataset is indeed balanced.
+
+Next, we plot the band of colors that are classified to belong to humans to see if the models generated from this dataset can be generalized to all races and ethnicities. We will use the package *grid*. Note that to plot a good band, we need a square matrix of colors. Since we have $50859$ observations that belong to humans, and this number is not perfect square, we need to chop off some observations. We will chop the most extreme observations to preserve the continuity of the band. Note that $\sqrt{50859} = 225.5194$, we will let out color matrix to be of dimension $225 \times 225$, effectively chopping 234 observations away.
+```{r, dev='jpeg'}
+library(grid)
+# create matrices of normalized Red,Green,Blue values belonging to humans.
+red = matrix(sort(skindata[skindata$Label == 1, 3]/255))
+green = matrix(sort(skindata[skindata$Label == 1, 2]/255))
+blue = matrix(sort(skindata[skindata$Label == 1, 1]/255))
+# create an RBG object
+humans = rgb(red[1:225^2,1], green[1:225^2,1], blue[1:225^2,1])
+# reshape the matrix into a square
+dim(humans) = c(225, 225)
+# plot the RGB matrix
+grid.raster(humans, interpolate = T)
+```
+
+Even after chopping away the extreme observations, our band ranges from very dark to very bright human-skin tone. For our modelling, we will use the entire color space. This is evidence that if our models below have a high accuracy, then they can generalize well to humans of all skin tones.
+  
+  
+Now, we move on to modelling.
+
+## Modelling
+We begin by creating classification models from different families. We will use logistic regression (LoR), linear discriminant analysis (LDA), quadratic discriminant analysis, and support vector machines (SVM). The choice of training and testing will be a 50-50 divide.
+```{r}
+set.seed(1)
+train.ind = sample(1:245057, size = 245056/2)
+train = skindata[train.ind, ]
+test = skindata[-train.ind, ]
+```
+
+### Logistic Regression
+An important theme in this project is model selection. In this section, we perform regularized logistic regression. We will use the Lasso, and select $\lambda$ using cross validation.
+```{r}
+set.seed(1)
+library(glmnet)
+# create a model matrix compatible with the library glmnet
+X = model.matrix(Label~., train)[,-31]
+y = ifelse(train$Label == "0", 0, 1)
+X.new = model.matrix(Label~., test)[,-31]
+y.new = ifelse(test$Label == "0", 0, 1)
+# Find the best lambda using cv
+cv.lasso = cv.glmnet(X, y, alpha = 1, family = "binomial")
+# Fit the model with the best lambda on the data
+model.logistic = glmnet(X, y, alpha = 1, family = "binomial",
+                lambda = cv.lasso$lambda.min)
+# Display logistic regression coefficients
+coef(model.logistic)
+# Make predictions on the test data
+probs = predict(model.logistic, newx = X.new)
+predicted = ifelse(probs > 0.5, 1, 0)
+# Build a confusion matrix
+table(predicted, y.new)
+# Assess model accuracy
+error.logistic = mean(predicted != y.new)
+error.logistic
+```
+The Lasso-Logistic model we have created seems very promising, with misclassification rate of ~9.94%.
+
+### Linear Discriminant Analysis
+```{r}
+set.seed(1)
+library(MASS)
+# Fit a model
+model.lda = lda(Label~., data = train)
+# Make predictions on the test data
+pred = predict(model.lda, test[,-4])
+predicted = pred$class
+# Build a confusion matrix
+table(predicted, y.new)
+# Assess model accuracy
+error.lda = mean(predicted != test[,4])
+error.lda
+```
+Surprisingly, the LDA model has an extremely lower testing error at 6.75%.
+
+### Quadratic Discriminant Analysis
+```{r}
+set.seed(1)
+# Fit a model
+model.qda = qda(Label~., data = train)
+# Make predictions on the test data
+pred = predict(model.qda, test[,-4])
+predicted = pred$class
+# Build a confusion matrix
+table(predicted, y.new)
+# Assess model accuracy
+error.qda = mean(predicted != test[,4])
+error.qda
+```
+Note that QDA produces an even lower error rate at 1.6%.
+
+### Support Vector Machine
+We will use the liquidSVM library to find the best seperating hyperplane.
+```{r, include=FALSE}
+set.seed(1)
+library('liquidSVM')
+model.svm = mcSVM( Label~. , train, display=1, threads=2)
+```
+
+We have suppressed the output of the model fitting line because it produces pages of progress reporting that is not relevant to us.
+
+```{r error=TRUE}
+# Make predictions on the test data
+pred = predict(model.svm, newdata = test[,-4])
+table(pred, test[,4])
+# Compute the misclassification rate
+error.svm = 1 - mean(pred == test[,4])
+error.svm
+```
+This is the best algorithm by far! The test error rate is set at 0.06%. This is extremely accurate.
+
+## Model Comparison
+Let us compare the test error for each model:
+```{r}
+y = c(error.logistic, error.lda, error.qda, error.svm)
+barplot(y, col = c("red", "violet", "purple", "pink"), 
+        xlab = "Modelling Method", 
+        names.arg = c("Logistic", "LDA", "QDA", "SVM"),
+        main = "Misclassification Rate")
+
+```
+This barplot shows the superiority of the SVM learning method. The most plausible explanation to this result is the non-linearity of the decision boundary. We are mapping RGB values to real numbers. There must be a hyper-surface that separates human skin RGB values from non-human skin RGB values. LDA and Logistic Regression produce linear decision boundaries, thus they cannot separate the classes well. Our hypothesis makes sense in light of the fact that QDA does much better than LDA. It looks like the data have a very curvy and flexible hyper-surface with a topology that cannot be captured by a quadratic function.
+
+## Conclusion
+During this project, I learned how to classify using Support Vector Machine as well as the package liquidSVM. In this project, the size of the dataset is a disadvantage because of how SVM algorithm works. Many of those functions take 15-60 minutes to work because they perform Cross Validation on a huge dataset as well as solve systems of equations with more than 120000 unknowns using the method of Lagrange Multipliers. In relation to the dataset, we have a created a powerful model that can predict whether a pixel belongs to human skin with approximately 100% accuracy. This is very useful in designing and implementing facial recognition systems. Human's faces can be identified based on their skin tone. Computer vision experts can use this model to build an AI-based robot, for example.
+  
+
+## References
+
+Dataset Link: https://archive.ics.uci.edu/ml/datasets/skin+segmentation
+  
+  
+LiquidSVM package examples: https://cran.r-project.org/web/packages/liquidSVM/liquidSVM.pdf
+  
+  
+A study done on the dataset: https://ieeexplore.ieee.org/document/5409447
+  
+  
+The preview section: https://link.springer.com/chapter/10.1007/978-3-642-10520-3_69
+  
+  
+Shannon Entropy: https://www.sciencedirect.com/topics/engineering/shannon-entropy
