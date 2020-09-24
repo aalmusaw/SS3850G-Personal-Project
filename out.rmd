@@ -11,7 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Introduction
 
-In this project, we analyze the the Skin Segmentation dataset provided by UCI Machine Learning Repository. This dataset is generated from various face images of people of different age groups, ethnicities, and genders from FERET and PAL databases. In addition, many other object images were used. The features are numbers from the color space of RBG values. The output is 1 if the RBG value corresponds to a human skin, and 0 otherwise. There is a wide array of applications for predictive models based on this dataset including facial recognition softwares. A study based on this dataset was done by a group of Indian researchers published by *Samsung India Software R&D Centre*. The full study is linked at the end of the report. The study uses fuzzy decision trees for a predictive model.
+In this project, we analyze the the Skin Segmentation dataset provided by UCI Machine Learning Repository. This dataset is generated from various face images of people of different age groups, ethnicities, and genders from FERET and PAL databases. In addition, many other object images were used. The features are numbers from the color space of RGB values. The output is 1 if the RGB value corresponds to a human skin, and 0 otherwise. There is a wide array of applications for predictive models based on this dataset including facial recognition softwares. A study based on this dataset was done by a group of Indian researchers published by *Samsung India Software R&D Centre*. The full study is linked at the end of the report. The study uses fuzzy decision trees for a predictive model.
 
 ## Data Analysis
 Let us import the data.
@@ -44,7 +44,7 @@ library(grid)
 red = matrix(sort(skindata[skindata$Label == 1, 3]/255))
 green = matrix(sort(skindata[skindata$Label == 1, 2]/255))
 blue = matrix(sort(skindata[skindata$Label == 1, 1]/255))
-# create an RBG object
+# create an RGB object
 humans = rgb(red[1:225^2,1], green[1:225^2,1], blue[1:225^2,1])
 # reshape the matrix into a square
 dim(humans) = c(225, 225)
